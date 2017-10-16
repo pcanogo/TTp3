@@ -1,0 +1,1 @@
+Type theory is closely related to (and in some cases overlaps with) type systems, which are a programming language feature used to reduce bugs. The types of type theory were created to avoid paradoxes in a variety of formal logics and rewrite systems and sometimes "type theory" is used to refer to this broader application.
