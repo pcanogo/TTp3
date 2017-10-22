@@ -6,14 +6,15 @@ import string
 import random
 import operator
 import numpy as np
+import pandas as pd
 
 from itertools import islice
 from collections import Counter
 from nltk.corpus import stopwords
+from collections import defaultdict
 from nltk.stem import SnowballStemmer
 from nltk.tokenize import word_tokenize
-
-
+from pandas.util.testing import assert_frame_equal
 
 def init_stop_words(language):
    #initialize stop words, passing a laguange as a parameter 
@@ -39,7 +40,7 @@ def filter_puntuation(text):
   filtered_text = []
   for term in text:
     if re.search('[a-zA-Z]', term):
-        filtered_text.append(term)
+      filtered_text.append(term)
   return filtered_text
 
 def count_words(text):
@@ -69,9 +70,7 @@ def clean_texts(texts_dir, stop_words):
         text_filtered = filter_puntuation(text_stem)
         #Count word ocurrence in text
         text_counted = count_words(text_filtered)
-        #Add texts and titles to list
-        # texts.append({'text': text_names[text_index],'text_vector': text_counted})
-        # texts.append({text_names[text_index]: text_counted})
+        #Add texts and titles to dictionary
         texts[text_names[text_index]] = text_counted
 
   return texts
@@ -91,7 +90,7 @@ def calculate_weight(term, terms, df_vector, number_documents):
   
 def tfidf_vectorize (df_vector, texts, size):
   tf_idf = {}
-  tf_idf_sliced = {}
+  tf_idf_sliced = []
   for text, terms in texts.iteritems():
     for term, frequency in terms.iteritems():
       if terms[term]:
@@ -101,22 +100,22 @@ def tfidf_vectorize (df_vector, texts, size):
 
   #Sort list by weight descending the select first N elements 
   for term, frequency in sorted(tf_idf.items(), key=operator.itemgetter(1), reverse=True)[:size]:
-    tf_idf_sliced[term]= tf_idf[term]
+    tf_idf_sliced.append(term)
 
   return tf_idf_sliced
 
+def fill_matrix(tf_idf, texts, term_matrix):
+  for text, vector in texts.iteritems():
+    for  term in tf_idf:
+      vector.setdefault(term, 0)
+      term_matrix.at[term, text] = vector[term]
 
 
 def cos_distance(vector1, vector2):
-  keys_v1 = set(vector1.keys())
-  keys_v2 = set(vector2.keys())
-  intersection = keys_v1 & keys_v2
-  magnitude_v1 = math.sqrt(sum([vector1[x]**2 for x in vector1.keys()]))
-  magnitude_v2 = math.sqrt(sum([vector2[x]**2 for x in vector2.keys()]))
-  dot_product = sum([vector1[x] * vector2[x] for x in intersection])
-  # dot_product = np.dot(vector1, vector2)
+  magnitude_v1 = np.linalg.norm(vector1)
+  magnitude_v2 = np.linalg.norm(vector2)
+  dot_product = np.dot(vector1, vector2)
   cross_product = magnitude_v1 * magnitude_v2
-
   if cross_product != 0:
     return 1 - (float(dot_product)/cross_product)
   else:
@@ -124,50 +123,46 @@ def cos_distance(vector1, vector2):
 
 
 def find_nearest_centroid(centroids, vector):
-  distances = []
-  for centroid_index, centroid in enumerate(centroids):
-    distances.append(cos_distance(vector, centroid))
+  distances = {}
+  for name, centroid in centroids.iteritems():
+    distances[name] =  cos_distance(vector, centroid)
 
-  return distances.index(min(distances))
-  # print'That was the centroid'
-  # print distances
+  return max(distances.iteritems(), key=operator.itemgetter(1))[0]
 
-# def calculate_medium(texts, cluster):
-#   vectors_to_add=[]
+def calculate_mean(term_matrix, centroid, cluster): 
+  vectors_to_add = pd.DataFrame(index = term_matrix.index, columns = cluster)
+  for name in cluster:
+    vectors_to_add[name] = term_matrix[name]
+  mean = vectors_to_add.mean(axis=1)
+  if mean.isnull().values.any() or np.sum(mean) == 0:
+    return centroid
+  else:
+    return mean
 
-#   for name in cluster:
-#     vectors_to_add.append(texts[name])
-
-
-
-
-def kmeans(k, tf_idf, texts):
+def kmeans(k, term_matrix):
   #Random init of centroids using the text vectors as an example
-  centroids = random.sample(texts.values(), 2)
-  # print centroids
+  centroids = term_matrix.sample(k, axis=1)
+  centroids_sum = centroids.sum(axis=1)
   #Empty init of clusters
-  clusters = [[] for centroid in centroids]
+  clusters = defaultdict(list)
   #Emty init of old centroids for convergence
-  old_centroids = centroids
-  # while old_centroids != centroids:
-  for text, vector in texts.iteritems():
-    nearest_centroid = find_nearest_centroid(centroids, vector)
-    clusters[nearest_centroid].append(text)
+  old_centroids = pd.DataFrame(0, index = centroids.index, columns = centroids.columns)
+  old_centroids_sum = old_centroids.sum(axis=1)
 
-  # print clusters
+  while not np.array_equal(old_centroids_sum, centroids_sum):
+    old_centroids_sum = centroids.sum(axis=1)
+    #Empty init of clusters
+    clusters.clear()
+    for name, vector in term_matrix.iteritems():
+      nearest_centroid = find_nearest_centroid(centroids, vector)
+      clusters[nearest_centroid].append(name)
 
-  # for cluster_index, cluster in enumerate(clusters):
-  #   old_centroids[index] = centroids[cluster_index]
-  #   centroids[cluster_index] = calculate_medium(texts, cluster)
+    for name, centroid in centroids.iteritems():
+      centroids[name] = calculate_mean(term_matrix, centroids[name], clusters[name])
     
-
-
-
-
-
-  # print clusters
-  # print centroids
-
+    centroids_sum = centroids.sum(axis=1)
+    old_centroids = centroids.copy()
+  print clusters
 if __name__ == '__main__':
 
   #Create list of stop words
@@ -179,8 +174,12 @@ if __name__ == '__main__':
   #Create vector of document freuqency for terms
   df_vector = df_vectorize(texts)
   #Create tf-idf vector with determined size 
-  tf_idf_size = 20
+  tf_idf_size = 30
   tf_idf = tfidf_vectorize(df_vector, texts, tf_idf_size)
+  #Create term matrix to store vectore using pandas
+  term_matrix = pd.DataFrame(index=tf_idf, columns=texts)
+  #Fill the matrix
+  fill_matrix(tf_idf, texts, term_matrix)
 
-  kmeans(2, tf_idf, texts)
+  kmeans(2, term_matrix)
   
