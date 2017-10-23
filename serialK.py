@@ -8,6 +8,7 @@ import operator
 import numpy as np
 import pandas as pd
 
+from time import time
 from itertools import islice
 from collections import Counter
 from nltk.corpus import stopwords
@@ -15,6 +16,8 @@ from collections import defaultdict
 from nltk.stem import SnowballStemmer
 from nltk.tokenize import word_tokenize
 from pandas.util.testing import assert_frame_equal
+
+start_time = time()
 
 def init_stop_words(language):
    #initialize stop words, passing a laguange as a parameter 
@@ -127,7 +130,7 @@ def find_nearest_centroid(centroids, vector):
   for name, centroid in centroids.iteritems():
     distances[name] =  cos_distance(vector, centroid)
 
-  return max(distances.iteritems(), key=operator.itemgetter(1))[0]
+  return min(distances.iteritems(), key=operator.itemgetter(1))[0]
 
 def calculate_mean(term_matrix, centroid, cluster): 
   vectors_to_add = pd.DataFrame(index = term_matrix.index, columns = cluster)
@@ -139,7 +142,8 @@ def calculate_mean(term_matrix, centroid, cluster):
   else:
     return mean
 
-def kmeans(k, term_matrix):
+def kmeans(k, max_iteration, term_matrix,):
+  iterations = 0
   #Random init of centroids using the text vectors as an example
   centroids = term_matrix.sample(k, axis=1)
   centroids_sum = centroids.sum(axis=1)
@@ -149,7 +153,7 @@ def kmeans(k, term_matrix):
   old_centroids = pd.DataFrame(0, index = centroids.index, columns = centroids.columns)
   old_centroids_sum = old_centroids.sum(axis=1)
 
-  while not np.array_equal(old_centroids_sum, centroids_sum):
+  while iterations < max_iteration and not np.array_equal(old_centroids_sum, centroids_sum):
     old_centroids_sum = centroids.sum(axis=1)
     #Empty init of clusters
     clusters.clear()
@@ -159,27 +163,34 @@ def kmeans(k, term_matrix):
 
     for name, centroid in centroids.iteritems():
       centroids[name] = calculate_mean(term_matrix, centroids[name], clusters[name])
+
+    # print 'Old ones'
+    # print old_centroids
+    # print 'New ones'
+    # print centroids
     
     centroids_sum = centroids.sum(axis=1)
-    old_centroids = centroids.copy()
+    iterations+=1
+
   print clusters
 if __name__ == '__main__':
 
   #Create list of stop words
   stop_words = init_stop_words('english')
   #Gather texts
-  texts_dir = collect_texts('/test3')
+  texts_dir = collect_texts('/test2')
   #Clean and optimize texts for functionality
   texts = clean_texts(texts_dir, stop_words)
   #Create vector of document freuqency for terms
   df_vector = df_vectorize(texts)
   #Create tf-idf vector with determined size 
-  tf_idf_size = 30
+  tf_idf_size = 100
   tf_idf = tfidf_vectorize(df_vector, texts, tf_idf_size)
   #Create term matrix to store vectore using pandas
   term_matrix = pd.DataFrame(index=tf_idf, columns=texts)
   #Fill the matrix
   fill_matrix(tf_idf, texts, term_matrix)
 
-  kmeans(2, term_matrix)
+  kmeans(2, 100, term_matrix)
+  print "PROGRAMA EJECUTO POR", time()-start_time,"SEGUNDOS"
   
