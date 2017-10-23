@@ -61,8 +61,9 @@ def clean_texts(texts_dir, stop_words):
       text_path = list(map(lambda x: texts_dir + '/' + x, text_names))
 
       for text_index, text_title in enumerate(text_path):
+        print 'Collecting...'
         #Open and read file
-        text = open(text_title).read().decode('utf-8')
+        text = open(text_title).read().decode('latin1')
         #Text preparation for operations
         text_prep = tokenize_words(text)
         #Remove stop words
@@ -109,6 +110,7 @@ def tfidf_vectorize (df_vector, texts, size):
 
 def fill_matrix(tf_idf, texts, term_matrix):
   for text, vector in texts.iteritems():
+    print 'Vectorizing...'
     for  term in tf_idf:
       vector.setdefault(term, 0)
       term_matrix.at[term, text] = vector[term]
@@ -168,17 +170,18 @@ def kmeans(k, max_iteration, term_matrix,):
     # print old_centroids
     # print 'New ones'
     # print centroids
-    
+    print 'Running...'
     centroids_sum = centroids.sum(axis=1)
     iterations+=1
 
   print clusters
 if __name__ == '__main__':
-
+  print 'NOT A TEST'
   #Create list of stop words
   stop_words = init_stop_words('english')
   #Gather texts
-  texts_dir = collect_texts('/test2')
+  texts_dir = collect_texts('/gutenberg/txt')
+  print texts_dir
   #Clean and optimize texts for functionality
   texts = clean_texts(texts_dir, stop_words)
   #Create vector of document freuqency for terms
@@ -191,6 +194,6 @@ if __name__ == '__main__':
   #Fill the matrix
   fill_matrix(tf_idf, texts, term_matrix)
 
-  kmeans(2, 100, term_matrix)
+  kmeans(16, 100, term_matrix)
   print "PROGRAMA EJECUTO POR", time()-start_time,"SEGUNDOS"
   
