@@ -33,7 +33,7 @@ def collect_texts(dir):
 def tokenize_words(text):
   return word_tokenize(text.lower())
 
-def remove_stop_words(text):
+def remove_stop_words(text, stop_words):
   return list(filter(lambda word: word not in stop_words, text))
 
 def stem_text(text):
@@ -61,13 +61,15 @@ def clean_texts(texts_dir, stop_words):
       text_path = list(map(lambda x: texts_dir + '/' + x, text_names))
 
       for text_index, text_title in enumerate(text_path):
+        # print text_title
+        # print text_names
         print 'Collecting...'
         #Open and read file
         text = open(text_title).read().decode('latin1')
         #Text preparation for operations
         text_prep = tokenize_words(text)
         #Remove stop words
-        clean_text = remove_stop_words(text_prep)
+        clean_text = remove_stop_words(text_prep, stop_words)
         #Stem text
         text_stem = stem_text(clean_text)
         #Filter Puntuation 
@@ -180,20 +182,20 @@ if __name__ == '__main__':
   #Create list of stop words
   stop_words = init_stop_words('english')
   #Gather texts
-  texts_dir = collect_texts('/gutenberg/txt')
+  texts_dir = collect_texts('/tests/test3')
   print texts_dir
   #Clean and optimize texts for functionality
   texts = clean_texts(texts_dir, stop_words)
   #Create vector of document freuqency for terms
   df_vector = df_vectorize(texts)
   #Create tf-idf vector with determined size 
-  tf_idf_size = 100
+  tf_idf_size = 30
   tf_idf = tfidf_vectorize(df_vector, texts, tf_idf_size)
   #Create term matrix to store vectore using pandas
   term_matrix = pd.DataFrame(index=tf_idf, columns=texts)
   #Fill the matrix
   fill_matrix(tf_idf, texts, term_matrix)
 
-  kmeans(16, 100, term_matrix)
+  kmeans(2, 100, term_matrix)
   print "PROGRAMA EJECUTO POR", time()-start_time,"SEGUNDOS"
   
