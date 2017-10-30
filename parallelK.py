@@ -182,13 +182,13 @@ if __name__ == '__main__':
   status = MPI.Status()
 
   start_time = 0
+  texts = {}
+  texts_norm = {}
+
 
   tag = {'READY': 1, 'DONE': 2, 'EXIT': 3, 'START': 4} 
 
   if rank == 0:  
-    texts = {}
-    texts_norm = {}
-
     start_time = time()
     task_index = 0
     workers_done = 0
