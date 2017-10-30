@@ -195,7 +195,7 @@ if __name__ == '__main__':
     workers = size - 1
 
     #Gather texts
-    texts_dir = get_text_dir('/tests/test3')
+    texts_dir = get_text_dir('/gutenberg/test1')
     #Collect all texts
     texts = collect_texts(texts_dir)
 
@@ -248,6 +248,6 @@ if __name__ == '__main__':
     #Fill the matrix
     fill_matrix(tf_idf, texts_norm, term_matrix)
 
-    kmeans(2, 30, term_matrix)
-  print "PROGRAMA EJECUTO POR", time()-start_time,"SEGUNDOS"
+    kmeans(4, 30, term_matrix)
+    print "PROGRAMA EJECUTO POR", time()-start_time,"SEGUNDOS"
   
