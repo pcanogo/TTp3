@@ -182,7 +182,7 @@ if __name__ == '__main__':
   #Create list of stop words
   stop_words = init_stop_words('english')
   #Gather texts
-  texts_dir = collect_texts('/tests/test3')
+  texts_dir = collect_texts('/gutenberg/test1')
   print texts_dir
   #Clean and optimize texts for functionality
   texts = clean_texts(texts_dir, stop_words)
@@ -196,6 +196,6 @@ if __name__ == '__main__':
   #Fill the matrix
   fill_matrix(tf_idf, texts, term_matrix)
 
-  kmeans(2, 100, term_matrix)
+  kmeans(4, 100, term_matrix)
   print "PROGRAMA EJECUTO POR", time()-start_time,"SEGUNDOS"
   

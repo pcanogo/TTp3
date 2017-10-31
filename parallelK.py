@@ -17,18 +17,23 @@ from nltk.stem import SnowballStemmer
 from nltk.tokenize import word_tokenize
 from pandas.util.testing import assert_frame_equal
 
+
 def init_stop_words(language):
    #initialize stop words, passing a laguange as a parameter 
    return set(stopwords.words(language))
 
+
 def tokenize_words(text):
   return word_tokenize(text.lower())
+
 
 def remove_stop_words(text, stop_words):
   return list(filter(lambda word: word not in stop_words, text))
 
+
 def stem_text(text):
   return list(map(lambda x: SnowballStemmer('english').stem(x),text))
+
 
 def filter_puntuation(text):
   filtered_text = []
@@ -37,8 +42,10 @@ def filter_puntuation(text):
       filtered_text.append(term)
   return filtered_text
 
+
 def count_words(text):
   return Counter(text)
+
 
 def dictionary_element_select(element, dictionary):
   return [e[element] for e in dictionary]
@@ -51,6 +58,7 @@ def get_text_dir(dir):
   texts_dir = base_dir + dir
   return texts_dir
 
+
 def collect_texts(texts_dir):
   texts_path = {}
   #Initialize puntuation remover
@@ -58,6 +66,7 @@ def collect_texts(texts_dir):
     for text_name in text_names:
       texts_path[text_name] = texts_dir + '/' + text_name
   return texts_path
+
 
 def normalize_texts(text_title, text_path, stop_words):
   #Initialize list to gather text and title of text
@@ -81,6 +90,7 @@ def normalize_texts(text_title, text_path, stop_words):
 
   return terms
 
+
 def df_vectorize(texts):
   df = {}
   for text, terms in texts.iteritems():
@@ -89,6 +99,7 @@ def df_vectorize(texts):
         df.setdefault(term, 0)
         df[term] += 1
   return df
+
 
 def calculate_weight(term, terms, df_vector, number_documents):
   return terms[term] * math.log(number_documents/df_vector[term])
@@ -110,12 +121,69 @@ def tfidf_vectorize (df_vector, texts, size):
 
   return tf_idf_sliced
 
+
 def fill_matrix(tf_idf, texts, term_matrix):
   for text, vector in texts.iteritems():
     print 'Vectorizing...'
     for  term in tf_idf:
       vector.setdefault(term, 0)
       term_matrix.at[term, text] = vector[term]
+
+
+def texts_master(comm, size, status, tag):
+
+  texts = {}
+  texts_norm = {}
+
+  task_index = 0
+  workers_done = 0
+  workers = size - 1
+
+  #Gather texts
+  texts_dir = get_text_dir('/tests/test3')
+  #Collect all texts
+  texts = collect_texts(texts_dir)
+
+  text_list = texts.items()
+
+  while workers_done < workers:
+
+    #Master recibe el estado actual de los workers
+    message = comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
+    task_tag = status.Get_tag()
+    source = status.Get_source()
+
+    if task_tag == tag['READY']:
+      if task_index < len(text_list):
+        comm.send(text_list[task_index], dest=source, tag=tag['START'])
+        task_index+=1
+        print 'Collecting document', task_index,'...'
+      else:
+        comm.send(None, dest=source, tag=tag['EXIT'])
+    elif task_tag == tag['DONE']:
+      texts_norm[message[0]] = message[1]    
+    elif task_tag == tag['EXIT']:
+      workers_done += 1
+  return texts_norm
+
+
+def texts_worker(comm, rank, status, tag):
+  #Create list of stop words
+  stop_words = init_stop_words('english')
+  comm.send(None, dest=0, tag=tag['READY'])
+  task = comm.recv(source=0, tag=MPI.ANY_TAG, status=status)
+  task_tag = status.Get_tag()
+  while task_tag!=tag['EXIT']:
+    if task_tag == tag['START']:
+      #Clean and optimize texts for functionality
+      message = normalize_texts(task[0], task[1], stop_words)
+      comm.send(message, dest=0, tag=tag['DONE'])
+
+    comm.send(None, dest=0, tag=tag['READY'])
+    task = comm.recv(source=0, tag=MPI.ANY_TAG, status=status)
+    task_tag = status.Get_tag()
+
+  comm.send(None, dest=0, tag=tag['EXIT'])  
 
 
 def cos_distance(vector1, vector2):
@@ -136,6 +204,7 @@ def find_nearest_centroid(centroids, vector):
 
   return min(distances.iteritems(), key=operator.itemgetter(1))[0]
 
+
 def calculate_mean(term_matrix, centroid, cluster): 
   vectors_to_add = pd.DataFrame(index = term_matrix.index, columns = cluster)
   for name in cluster:
@@ -146,7 +215,8 @@ def calculate_mean(term_matrix, centroid, cluster):
   else:
     return mean
 
-def kmeans(k, max_iteration, term_matrix,):
+
+def kmeans(k, max_iteration, term_matrix, comm, size, status, tag):
   iterations = 0
   #Random init of centroids using the text vectors as an example
   centroids = term_matrix.sample(k, axis=1)
@@ -157,13 +227,42 @@ def kmeans(k, max_iteration, term_matrix,):
   old_centroids = pd.DataFrame(0, index = centroids.index, columns = centroids.columns)
   old_centroids_sum = old_centroids.sum(axis=1)
 
+  workers = size - 1
+  texts = term_matrix.columns
   while iterations < max_iteration and not np.array_equal(old_centroids_sum, centroids_sum):
     old_centroids_sum = centroids.sum(axis=1)
     #Empty init of clusters
     clusters.clear()
-    for name, vector in term_matrix.iteritems():
-      nearest_centroid = find_nearest_centroid(centroids, vector)
-      clusters[nearest_centroid].append(name)
+
+    # # print term_matrix[term_matrix.columns[0]]
+    # for name, vector in term_matrix.iteritems():
+    #   nearest_centroid = find_nearest_centroid(centroids, vector)
+    #   clusters[nearest_centroid].append(name)
+
+    
+    task_index = 0
+    workers_done = 0
+
+    while workers_done < workers:
+      nearest_centroid = comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
+      task_tag = status.Get_tag()
+      source = status.Get_source()
+
+      if task_tag == tag['READY']:
+        if task_index < len(texts):
+          name = texts[task_index]
+          vector = term_matrix[texts[task_index]]
+          data = [name, vector, centroids]
+          comm.send(data, dest=source, tag=tag['START'])
+          task_index+=1
+        else:
+          comm.send(None, dest=source, tag=tag['EXIT'])
+      elif task_tag == tag['DONE']:
+        clusters[nearest_centroid[1]].append(nearest_centroid[0])
+        print clusters
+      elif task_tag == tag['EXIT']:
+        workers_done += 1
+
 
     for name, centroid in centroids.iteritems():
       centroids[name] = calculate_mean(term_matrix, centroids[name], clusters[name])
@@ -173,6 +272,23 @@ def kmeans(k, max_iteration, term_matrix,):
     iterations+=1
 
   print clusters
+
+
+def kmeans_workers(comm, size, status, tag):
+
+  comm.send(None, dest=0, tag=tag['READY'])
+  task = comm.recv(source=0, tag=MPI.ANY_TAG, status=status)
+  task_tag = status.Get_tag()
+  while task_tag!=tag['EXIT']:
+    if task_tag == tag['START']:
+      message = [task[0], find_nearest_centroid(task[2], task[1])]
+      comm.send(message, dest=0, tag=tag['DONE'])
+    comm.send(None, dest=0, tag=tag['READY'])
+    task = comm.recv(source=0, tag=MPI.ANY_TAG, status=status)
+    task_tag = status.Get_tag()
+  comm.send(None, dest=0, tag=tag['EXIT'])
+
+
 
 if __name__ == '__main__':
 
@@ -190,52 +306,10 @@ if __name__ == '__main__':
 
   if rank == 0:  
     start_time = time()
-    task_index = 0
-    workers_done = 0
-    workers = size - 1
-
-    #Gather texts
-    texts_dir = get_text_dir('/gutenberg/test1')
-    #Collect all texts
-    texts = collect_texts(texts_dir)
-
-    text_list = texts.items()
-
-    while workers_done < workers:
-
-      #Master recibe el estado actual de los workers
-      message = comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
-      task_tag = status.Get_tag()
-      source = status.Get_source()
-
-      if task_tag == tag['READY']:
-        if task_index < len(text_list):
-          comm.send(text_list[task_index], dest=source, tag=tag['START'])
-          task_index+=1
-        else:
-          comm.send(None, dest=source, tag=tag['EXIT'])
-      elif task_tag == tag['DONE']:
-        texts_norm[message[0]] = message[1]    
-      elif task_tag == tag['EXIT']:
-        workers_done += 1
+    texts_norm = texts_master(comm, size, status, tag)
 
   else: 
-        #Create list of stop words
-    stop_words = init_stop_words('english')
-    comm.send(None, dest=0, tag=tag['READY'])
-    task = comm.recv(source=0, tag=MPI.ANY_TAG, status=status)
-    task_tag = status.Get_tag()
-    while task_tag!=tag['EXIT']:
-      if task_tag == tag['START']:
-        #Clean and optimize texts for functionality
-        message = normalize_texts(task[0], task[1], stop_words)
-        comm.send(message, dest=0, tag=tag['DONE'])
-
-      comm.send(None, dest=0, tag=tag['READY'])
-      task = comm.recv(source=0, tag=MPI.ANY_TAG, status=status)
-      task_tag = status.Get_tag()
-
-    comm.send(None, dest=0, tag=tag['EXIT'])
+    texts_worker(comm, rank, status, tag)
 
   if rank == 0:
     #Create vector of document freuqency for terms
@@ -247,7 +321,9 @@ if __name__ == '__main__':
     term_matrix = pd.DataFrame(index=tf_idf, columns=texts_norm)
     #Fill the matrix
     fill_matrix(tf_idf, texts_norm, term_matrix)
-
-    kmeans(4, 30, term_matrix)
+    kmeans(2, 30, term_matrix, comm, size, status, tag)
     print "PROGRAMA EJECUTO POR", time()-start_time,"SEGUNDOS"
-  
+  else:
+    stop = False 
+    while not stop:
+      kmeans_workers(comm, size, status, tag)
