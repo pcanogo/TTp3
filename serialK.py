@@ -84,10 +84,9 @@ def clean_texts(texts_dir, stop_words):
 def df_vectorize(texts):
   df = {}
   for text, terms in texts.iteritems():
-    for term, frequency in terms.iteritems():
-      if terms[term]:
-        df.setdefault(term, 0)
-        df[term] += 1
+    for term in terms:
+      df.setdefault(term, 0)
+      df[term] += 1
   return df
 
 def calculate_weight(term, terms, df_vector, number_documents):
@@ -178,24 +177,24 @@ def kmeans(k, max_iteration, term_matrix,):
 
   print clusters
 if __name__ == '__main__':
-  print 'NOT A TEST'
+  # print 'NOT A TEST'
   #Create list of stop words
   stop_words = init_stop_words('english')
   #Gather texts
-  texts_dir = collect_texts('/gutenberg/test1')
+  texts_dir = collect_texts('/tests/test3')
   print texts_dir
   #Clean and optimize texts for functionality
   texts = clean_texts(texts_dir, stop_words)
   #Create vector of document freuqency for terms
   df_vector = df_vectorize(texts)
   #Create tf-idf vector with determined size 
-  tf_idf_size = 30
+  tf_idf_size = 100
   tf_idf = tfidf_vectorize(df_vector, texts, tf_idf_size)
   #Create term matrix to store vectore using pandas
   term_matrix = pd.DataFrame(index=tf_idf, columns=texts)
   #Fill the matrix
   fill_matrix(tf_idf, texts, term_matrix)
 
-  kmeans(4, 100, term_matrix)
+  kmeans(2, 100, term_matrix)
   print "PROGRAMA EJECUTO POR", time()-start_time,"SEGUNDOS"
   

@@ -24,18 +24,22 @@ def init_stop_words(language):
 
 
 def tokenize_words(text):
+  #Change all letters to lower case and takenize word
   return word_tokenize(text.lower())
 
 
 def remove_stop_words(text, stop_words):
+  #remove stop words and returns a list of the filtered words
   return list(filter(lambda word: word not in stop_words, text))
 
 
 def stem_text(text):
+  #returns a list of the stemmed words
   return list(map(lambda x: SnowballStemmer('english').stem(x),text))
 
 
 def filter_puntuation(text):
+  #filters the puntuations items in the list
   filtered_text = []
   for term in text:
     if re.search('[a-zA-Z]', term):
@@ -52,7 +56,7 @@ def dictionary_element_select(element, dictionary):
 
 
 def get_text_dir(dir):
-  #Get base directory path
+  #Get base directory path of the program
   base_dir = os.path.dirname(os.path.realpath(__file__))
   #Add texts directory to base directory path 
   texts_dir = base_dir + dir
@@ -61,8 +65,9 @@ def get_text_dir(dir):
 
 def collect_texts(texts_dir):
   texts_path = {}
-  #Initialize puntuation remover
+  #iterate through the directory of the texts
   for root, dirs, text_names in os.walk(texts_dir):
+    #create a full accessible with each name of the text
     for text_name in text_names:
       texts_path[text_name] = texts_dir + '/' + text_name
   return texts_path
@@ -72,7 +77,6 @@ def normalize_texts(text_title, text_path, stop_words):
   #Initialize list to gather text and title of text
   terms = []
 
-# print 'Collecting...'
   #Open and read file
   text = open(text_path).read().decode('latin1')
   #Text preparation for operations
@@ -92,16 +96,19 @@ def normalize_texts(text_title, text_path, stop_words):
 
 
 def df_vectorize(texts):
+  #Dictionary that will count term document frequency
   df = {}
+  #for each list of terms of the text check frequency
   for text, terms in texts.iteritems():
-    for term, frequency in terms.iteritems():
-      if terms[term]:
-        df.setdefault(term, 0)
-        df[term] += 1
+    for term in terms:
+      #if term is not in dictionary add it with value of 0
+      df.setdefault(term, 0)
+      df[term] += 1
   return df
 
 
 def calculate_weight(term, terms, df_vector, number_documents):
+  #calculate the weight of the word with tf-idf formula
   return terms[term] * math.log(number_documents/df_vector[term])
 
   
@@ -115,7 +122,7 @@ def tfidf_vectorize (df_vector, texts, size):
         weight = calculate_weight(term, terms, df_vector, len(texts))
         tf_idf[term] = max(tf_idf[term], weight)
 
-  #Sort list by weight descending the select first N elements 
+  #Sort list by weight descending then select first N elements 
   for term, frequency in sorted(tf_idf.items(), key=operator.itemgetter(1), reverse=True)[:size]:
     tf_idf_sliced.append(term)
 
@@ -130,7 +137,7 @@ def fill_matrix(tf_idf, texts, term_matrix):
       term_matrix.at[term, text] = vector[term]
 
 
-def texts_master(comm, size, status, tag):
+def texts_master(path, comm, size, status, tag):
 
   texts = {}
   texts_norm = {}
@@ -140,7 +147,7 @@ def texts_master(comm, size, status, tag):
   workers = size - 1
 
   #Gather texts
-  texts_dir = get_text_dir('/tests/test3')
+  texts_dir = get_text_dir(path)
   #Collect all texts
   texts = collect_texts(texts_dir)
 
@@ -230,16 +237,10 @@ def kmeans(k, max_iteration, term_matrix, comm, size, status, tag):
   workers = size - 1
   texts = term_matrix.columns
   while iterations < max_iteration and not np.array_equal(old_centroids_sum, centroids_sum):
+    non_block_bcast("work", comm, size)
     old_centroids_sum = centroids.sum(axis=1)
     #Empty init of clusters
     clusters.clear()
-
-    # # print term_matrix[term_matrix.columns[0]]
-    # for name, vector in term_matrix.iteritems():
-    #   nearest_centroid = find_nearest_centroid(centroids, vector)
-    #   clusters[nearest_centroid].append(name)
-
-    
     task_index = 0
     workers_done = 0
 
@@ -259,7 +260,6 @@ def kmeans(k, max_iteration, term_matrix, comm, size, status, tag):
           comm.send(None, dest=source, tag=tag['EXIT'])
       elif task_tag == tag['DONE']:
         clusters[nearest_centroid[1]].append(nearest_centroid[0])
-        print clusters
       elif task_tag == tag['EXIT']:
         workers_done += 1
 
@@ -271,6 +271,7 @@ def kmeans(k, max_iteration, term_matrix, comm, size, status, tag):
     centroids_sum = centroids.sum(axis=1)
     iterations+=1
 
+  non_block_bcast("exit", comm, size)
   print clusters
 
 
@@ -288,6 +289,9 @@ def kmeans_workers(comm, size, status, tag):
     task_tag = status.Get_tag()
   comm.send(None, dest=0, tag=tag['EXIT'])
 
+def non_block_bcast(data, comm, size):
+  for x in range(1,size):
+    req = comm.isend(data, dest=x, tag=11)
 
 
 if __name__ == '__main__':
@@ -300,13 +304,20 @@ if __name__ == '__main__':
   start_time = 0
   texts = {}
   texts_norm = {}
-
+  tf_idf_size = 100
+  path = '/tests/test3'
+  # path = '/gutenberg/test1'
+  k_size = 4
 
   tag = {'READY': 1, 'DONE': 2, 'EXIT': 3, 'START': 4} 
 
+  df_vector = pd.DataFrame()
+  tf_idf = pd.DataFrame()
+  term_matrix = pd.DataFrame()
+
   if rank == 0:  
     start_time = time()
-    texts_norm = texts_master(comm, size, status, tag)
+    texts_norm = texts_master(path, comm, size, status, tag)
 
   else: 
     texts_worker(comm, rank, status, tag)
@@ -315,15 +326,19 @@ if __name__ == '__main__':
     #Create vector of document freuqency for terms
     df_vector = df_vectorize(texts_norm)
     #Create tf-idf vector with determined size 
-    tf_idf_size = 100
     tf_idf = tfidf_vectorize(df_vector, texts_norm, tf_idf_size)
-    #Create term matrix to store vectore using pandas
+    #Create term matrix to store vectors using pandas
     term_matrix = pd.DataFrame(index=tf_idf, columns=texts_norm)
     #Fill the matrix
     fill_matrix(tf_idf, texts_norm, term_matrix)
-    kmeans(2, 30, term_matrix, comm, size, status, tag)
+    kmeans(k_size, 30, term_matrix, comm, size, status, tag)
     print "PROGRAMA EJECUTO POR", time()-start_time,"SEGUNDOS"
   else:
     stop = False 
     while not stop:
-      kmeans_workers(comm, size, status, tag)
+      req = comm.irecv(source=0, tag=11)
+      instruction = req.wait()
+      if instruction == "work":
+        kmeans_workers(comm, size, status, tag)
+      elif instruction == "exit":
+        stop = True
