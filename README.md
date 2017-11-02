@@ -7,6 +7,7 @@ Install pip dependencies:
 $ pip install numpy
 $ pip install nltk
 $ pip install pandas
+$ pip install mpi4py
 ```
 
 then install nltk dependencies: 
@@ -16,6 +17,21 @@ $ python
 	nltk.download('stopwords')
 	nltk.download('punkt')
 ```
+
+or create Conda environment with 
+
+Install pip dependencies:
+```
+$ conda create -n env_name python=2.7 anaconda
+$ source activate env_name
+```
+
+install nltk dependencies as describe above and after install mpi4py
+
+```
+$ pip install mpi4pi
+```
+
 
 ## How to run
 To run enter the following command:
